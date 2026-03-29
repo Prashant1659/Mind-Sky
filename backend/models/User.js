@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
 
 const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
@@ -57,9 +58,19 @@ const UserSchema = new mongoose.Schema({
   level: { type: Number, default: 1 },
   xp: { type: Number, default: 0 },
   emotionalScore: { type: Number, default: 75 },
+  suggestedActivity: { type: String },
   journal: [{ 
     text: { type: String, required: true },
     date: { type: Date, default: Date.now }
+  }],
+
+  // AI Gateway fields
+  sessionId: { type: String, default: () => uuidv4() },
+  lastAiInsight: { type: mongoose.Schema.Types.Mixed, default: null },
+  chatHistory: [{
+    role:      { type: String, enum: ['user', 'assistant'], required: true },
+    content:   { type: String, required: true },
+    timestamp: { type: Date, default: Date.now }
   }],
 }, { timestamps: true });
 

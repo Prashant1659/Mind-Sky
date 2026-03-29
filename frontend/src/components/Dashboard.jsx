@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Logo from './Logo';
+import ChatBot from './ChatBot';
 import { guides, sidebarItems } from '../utils/constants';
 import * as FiIcons from 'react-icons/fi';
 
@@ -212,6 +213,15 @@ const Dashboard = ({ onLogout }) => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto relative p-8 lg:p-12">
+        {/* Chat tab — full-panel, no padding wrapper */}
+        {activeTab === 'chat' && (
+          <div className="absolute inset-0">
+            <ChatBot user={user} onClose={() => setActiveTab('dashboard')} />
+          </div>
+        )}
+
+        {activeTab !== 'chat' && (
+          <>
         <div className="absolute top-0 right-0 w-[60%] h-[40%] bg-blue-200/20 blur-[120px] rounded-full -z-10 pointer-events-none"></div>
 
         {/* Header */}
@@ -248,7 +258,9 @@ const Dashboard = ({ onLogout }) => {
             <h2 className="text-4xl lg:text-5xl font-serif font-black mb-4 leading-tight">{selectedGuide.quote}</h2>
             <p className="text-[#0D1B2A]/40 font-black uppercase tracking-[0.2em] mb-8">— {selectedGuide.name.toUpperCase()}</p>
             <div className="flex flex-wrap justify-center md:justify-start gap-4">
-              <button className="px-8 py-4 bg-white text-[#0D1B2A] rounded-2xl font-black shadow-lg hover:-translate-y-1 transition-all text-sm active:scale-95 cursor-pointer">Start Chat</button>
+              <button
+                onClick={() => setActiveTab('chat')}
+                className="px-8 py-4 bg-white text-[#0D1B2A] rounded-2xl font-black shadow-lg hover:-translate-y-1 transition-all text-sm active:scale-95 cursor-pointer">Start Chat</button>
               <button className="px-8 py-4 bg-[#D1E5F4]/60 text-[#0D1B2A] rounded-2xl font-black shadow-sm hover:-translate-y-1 transition-all text-sm active:scale-95 cursor-pointer">Take Test</button>
             </div>
           </div>
@@ -385,6 +397,8 @@ const Dashboard = ({ onLogout }) => {
           </div>
 
         </div>
+        </>
+        )}
       </main>
     </div>
   );
