@@ -139,7 +139,7 @@ export default function ChatBot({ user, onClose }) {
         </div>
         {/* Insight pill */}
         <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-full border border-blue-100">
-          <FiIcons.FiBrain size={14} className="text-blue-400" />
+          <FiIcons.FiCpu size={14} className="text-blue-400" />
           <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">AI-Powered</span>
         </div>
         {onClose && (
