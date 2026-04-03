@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { guides } from '../utils/constants';
 import * as FiIcons from 'react-icons/fi';
 
@@ -31,37 +32,67 @@ export default function ChatBot({ user, onClose }) {
   const guide        = guides.find((g) => g.id === user?.selectedGuide) || guides[0];
   const firstName    = user?.fullName?.split(' ')[0] || 'Friend';
 
-  const [messages,   setMessages]   = useState([]);
-  const [input,      setInput]      = useState('');
-  const [isTyping,   setIsTyping]   = useState(false);
-  const [isLoading,  setIsLoading]  = useState(true);
-  const [error,      setError]      = useState(null);
+  const [messages,      setMessages]      = useState([]);
+  const [input,         setInput]         = useState('');
+  const [isTyping,      setIsTyping]      = useState(false);
+  const [isLoading,     setIsLoading]     = useState(true);
+  const [error,         setError]         = useState(null);
+  
+  // Docker Gateway integration states
+  const [correlationId, setCorrelationId] = useState('');
+  const [sessionId,     setSessionId]     = useState('');
+  const [phase,         setPhase]         = useState('');
+  const [questionId,    setQuestionId]    = useState('');
+  const [questionnaireId, setQuestionnaireId] = useState('');
+  
   const bottomRef = useRef(null);
 
-  // ── Load chat history on mount ──────────────────────────────────────────
+  // ── Load new chat session on mount ─────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
+        const newCorrelationId = uuidv4();
+        setCorrelationId(newCorrelationId);
+
         const token = localStorage.getItem('token');
-        const res   = await fetch(API('/ai/history'), {
-          headers: { Authorization: `Bearer ${token}` },
+        const res   = await fetch(API('/ai/start'), {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'X-Correlation-ID': newCorrelationId
+          },
+          body: JSON.stringify({ message: null })
         });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.history && data.history.length > 0) {
-            setMessages(data.history.map((m) => ({ role: m.role, content: m.content })));
-          } else {
-            // First-time greeting from guide
-            setMessages([{
-              role:    'assistant',
-              content: `${guide.greeting} I'm ${guide.name}, your personal guide on Mind Sky. How are you feeling today, ${firstName}? 💙`,
-            }]);
-          }
+
+        if (!res.ok) {
+          throw new Error('Fallback required');
         }
-      } catch {
+
+        const data = await res.json();
+        setSessionId(data.sessionId);
+        setPhase(data.phase);
+
+        if (data.question && data.question.text) {
+          if (data.question.id) {
+            setQuestionId(data.question.id);
+            setQuestionnaireId(data.question.id.split('_')[0]);
+          }
+          setMessages([{
+            role: 'assistant',
+            content: data.question.text
+          }]);
+        } else {
+          setMessages([{
+            role: 'assistant',
+            content: `${guide.greeting} I'm ${guide.name}, your personal guide on Mind Sky. How are you feeling today, ${firstName}? 💙`,
+          }]);
+        }
+
+      } catch (err) {
         setMessages([{
-          role:    'assistant',
-          content: `${guide.greeting} I'm ${guide.name}. How can I support you today, ${firstName}?`,
+          role: 'assistant',
+          content: `${guide.greeting} I'm ${guide.name}. It seems my advanced systems are offline. I'm here to listen, ${firstName}.`,
         }]);
       } finally {
         setIsLoading(false);
@@ -75,29 +106,82 @@ export default function ChatBot({ user, onClose }) {
   }, [messages, isTyping]);
 
   // ── Send message ────────────────────────────────────────────────────────
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || isTyping) return;
+  const handleSend = async (textOverride = null) => {
+    const text = textOverride !== null ? textOverride : input.trim();
+    if (text === '' || text === null || isTyping) return;
 
-    setInput('');
+    if (textOverride === null) {
+      setInput('');
+    }
     setError(null);
-    setMessages((prev) => [...prev, { role: 'user', content: text }]);
+    setMessages((prev) => [...prev, { role: 'user', content: text.toString() }]);
     setIsTyping(true);
 
     try {
       const token = localStorage.getItem('token');
-      const res   = await fetch(API('/ai/chat'), {
+      
+      let reqBody = { sessionId };
+      if (phase === 'QUESTIONNAIRE') {
+        reqBody.questionnaireId = questionnaireId;
+        reqBody.questionId = questionId;
+        reqBody.answer = text;
+      } else {
+        reqBody.message = text;
+      }
+
+      const res   = await fetch(API('/ai/answer'), {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ message: text }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Correlation-ID': correlationId
+        },
+        body: JSON.stringify(reqBody),
       });
 
+      if (!res.ok) {
+        throw new Error('Connection issue');
+      }
+
       const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: data.reply || data.message || 'I hear you. 🌟' },
-      ]);
-    } catch {
+      
+      // Update phase
+      if (data.phase) setPhase(data.phase);
+      // Removed setSessionId(data.sessionId) to ensure the root ID stays constant
+
+      // Display response
+      const questionObj = data.question || data.nextQuestion;
+      
+      if (questionObj && questionObj.id) {
+        setQuestionId(questionObj.id);
+        setQuestionnaireId(questionObj.id.split('_')[0]);
+      }
+      
+      if (data.phase === 'COMPLETED') {
+        let finalText = 'Thank you, the assessment is complete. We have saved your results safely.\n\n';
+        const aiResponse = data.aiServiceResponse;
+        
+        if (aiResponse) {
+          if (aiResponse.disclaimer) finalText += `DISCLAIMER:\n${aiResponse.disclaimer}\n\n`;
+          if (aiResponse.summary) finalText += `SUMMARY:\n${aiResponse.summary}\n\n`;
+          if (aiResponse.severityExplanation) finalText += `SEVERITY:\n${aiResponse.severityExplanation}\n\n`;
+          if (aiResponse.insights) finalText += `INSIGHTS:\n${aiResponse.insights}\n\n`;
+          if (aiResponse.recommendations && aiResponse.recommendations.length > 0) {
+            finalText += `RECOMMENDATIONS:\n${aiResponse.recommendations.map(r => `• ${r}`).join('\n')}\n\n`;
+          }
+
+          if (aiResponse.reassurance) finalText += `REASSURANCE:\n${aiResponse.reassurance}\n\n`;
+          if (aiResponse.keyFindings && aiResponse.keyFindings.length > 0) {
+            finalText += `KEY FINDINGS:\n${aiResponse.keyFindings.map(r => `• ${r}`).join('\n')}\n`;
+          }
+        }
+        
+        setMessages((prev) => [...prev, { role: 'assistant', content: finalText.trim() }]);
+      } else if (questionObj && questionObj.text) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: questionObj.text }]);
+      }
+
+    } catch (err) {
       setError('Connection issue. Please try again.');
       setMessages((prev) => [
         ...prev,
@@ -109,7 +193,12 @@ export default function ChatBot({ user, onClose }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === 'Enter' && !e.shiftKey) { 
+      e.preventDefault(); 
+      if (phase !== 'QUESTIONNAIRE' && phase !== 'COMPLETED') {
+        handleSend();
+      }
+    }
   };
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -160,7 +249,7 @@ export default function ChatBot({ user, onClose }) {
           <div className="flex justify-center py-16">
             <div className="flex items-center gap-3 text-[#0D1B2A]/40">
               <FiIcons.FiLoader size={18} className="animate-spin" />
-              <span className="text-sm font-medium">Loading your conversation…</span>
+              <span className="text-sm font-medium">Starting secure session…</span>
             </div>
           </div>
         )}
@@ -192,7 +281,7 @@ export default function ChatBot({ user, onClose }) {
                   ? 'bg-[#0D1B2A] text-white rounded-br-md shadow-lg'
                   : 'bg-white/80 backdrop-blur-md border border-white text-[#0D1B2A] rounded-bl-md shadow-sm'
                 }`}
-              style={{ wordBreak: 'break-word' }}
+              style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
             >
               {msg.content}
             </div>
@@ -225,60 +314,66 @@ export default function ChatBot({ user, onClose }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Suggested prompts (shown when empty-ish) ── */}
-      {!isLoading && messages.length <= 1 && (
-        <div className="px-8 pb-4 flex flex-wrap gap-2 shrink-0">
-          {[
-            "I'm feeling anxious today",
-            "Help me breathe",
-            "What should I focus on?",
-            "I need some motivation",
-          ].map((prompt) => (
-            <button
-              key={prompt}
-              onClick={() => { setInput(prompt); }}
-              className="px-4 py-2 bg-white/70 hover:bg-white border border-white rounded-full text-xs font-bold text-[#0D1B2A]/70 hover:text-[#0D1B2A] transition-all cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-0.5"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* ── Input bar ── */}
       <div className="px-6 py-4 bg-white/60 backdrop-blur-xl border-t border-white/50 shrink-0">
-        <div className="flex items-end gap-3 bg-white rounded-[24px] border border-white/80 shadow-sm px-4 py-2 focus-within:shadow-md focus-within:border-blue-100 transition-all">
-          <textarea
-            id="chat-input"
-            rows={1}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              // Auto-grow up to 5 rows
-              e.target.style.height = 'auto';
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={`Message ${guide.name}…`}
-            disabled={isTyping || isLoading}
-            className="flex-1 resize-none bg-transparent outline-none text-sm font-medium text-[#0D1B2A] placeholder:text-[#0D1B2A]/30 py-1.5 min-h-[28px] max-h-[120px] disabled:opacity-50"
-            style={{ lineHeight: '1.5' }}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || isTyping || isLoading}
-            id="chat-send-btn"
-            className="w-10 h-10 bg-[#0D1B2A] hover:bg-black text-white rounded-full flex items-center justify-center transition-all shrink-0 disabled:opacity-30 disabled:cursor-not-allowed hover:scale-105 active:scale-95 cursor-pointer shadow-md mb-0.5"
-          >
-            {isTyping
-              ? <FiIcons.FiLoader size={16} className="animate-spin" />
-              : <FiIcons.FiSend size={16} />
-            }
-          </button>
-        </div>
-        <p className="text-center text-[9px] font-black uppercase tracking-widest text-[#0D1B2A]/20 mt-2">
-          AI · Emotional Analysis · Mind Sky
-        </p>
+        
+        {phase === 'COMPLETED' ? (
+          <div className="w-full text-center py-3 text-sm font-bold tracking-wide text-[#0D1B2A]/40 uppercase">
+            Session Completed
+          </div>
+        ) : phase === 'QUESTIONNAIRE' ? (
+          <div className="flex justify-center flex-wrap gap-2 w-full py-1">
+            {[0, 1, 2, 3].map((val) => (
+              <button
+                key={val}
+                onClick={() => handleSend(val)}
+                disabled={isTyping || isLoading}
+                className="w-12 h-12 bg-white hover:bg-blue-50 border-2 border-blue-100 text-blue-600 font-black text-lg rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
+              >
+                {val}
+              </button>
+            ))}
+            <div className="w-full text-center mt-2 text-[10px] uppercase font-black tracking-widest text-[#0D1B2A]/40">
+              Select an option above (0 = Not at all, 3 = Very much)
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-end gap-3 bg-white rounded-[24px] border border-white/80 shadow-sm px-4 py-2 focus-within:shadow-md focus-within:border-blue-100 transition-all">
+            <textarea
+              id="chat-input"
+              rows={1}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Auto-grow up to 5 rows
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={`Message ${guide.name}…`}
+              disabled={isTyping || isLoading}
+              className="flex-1 resize-none bg-transparent outline-none text-sm font-medium text-[#0D1B2A] placeholder:text-[#0D1B2A]/30 py-1.5 min-h-[28px] max-h-[120px] disabled:opacity-50"
+              style={{ lineHeight: '1.5' }}
+            />
+            <button
+              onClick={() => handleSend(null)}
+              disabled={!input.trim() || isTyping || isLoading}
+              id="chat-send-btn"
+              className="w-10 h-10 bg-[#0D1B2A] hover:bg-black text-white rounded-full flex items-center justify-center transition-all shrink-0 disabled:opacity-30 disabled:cursor-not-allowed hover:scale-105 active:scale-95 cursor-pointer shadow-md mb-0.5"
+            >
+              {isTyping
+                ? <FiIcons.FiLoader size={16} className="animate-spin" />
+                : <FiIcons.FiSend size={16} />
+              }
+            </button>
+          </div>
+        )}
+        
+        {phase !== 'QUESTIONNAIRE' && phase !== 'COMPLETED' && (
+          <p className="text-center text-[9px] font-black uppercase tracking-widest text-[#0D1B2A]/20 mt-2">
+            AI · Emotional Analysis · Mind Sky
+          </p>
+        )}
       </div>
     </div>
   );

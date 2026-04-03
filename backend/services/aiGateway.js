@@ -1,144 +1,81 @@
 /**
  * AI Gateway Service — Mind Sky
- * Single source of intelligence for all AI interactions.
- * Set AI_GATEWAY_URL and AI_GATEWAY_KEY in your .env file.
+ * Replaces old placeholder logic. Hits local Docker container (localhost:8080).
  */
 
-const AI_ENDPOINT = process.env.AI_GATEWAY_URL || null;
-const AI_KEY      = process.env.AI_GATEWAY_KEY  || null;
+const AI_URL_START = 'http://localhost:8080/api/gateway/start';
+const AI_URL_ANSWER = 'http://localhost:8080/api/gateway/answer';
 
-// ─── Fallback responses ────────────────────────────────────────────────────
+async function startSession(correlationId) {
+  try {
+    const response = await fetch(AI_URL_START, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Correlation-ID': correlationId
+      },
+      body: JSON.stringify({ message: null })
+    });
 
-const FALLBACK_CHAT = (guideName = 'your guide') => ({
-  aiServiceResponse: {
-    summary: `${guideName} is here with you. The AI service is currently resting — but your feelings are always valid.`,
-    severityExplanation: 'Unable to reach the AI at this time.',
-    keyFindings: [],
-    recommendations: [
-      'Take three slow, deep breaths.',
-      'Write a few thoughts in your journal.',
-      'Reach out to someone you trust.',
-    ],
-    reassurance: "You're doing great just by showing up today. 🌟",
-  },
-  breakdown: {},
-});
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[AI Gateway] /start error: ${response.status} ${text}`);
+      return null;
+    }
 
-const FALLBACK_ASSESSMENT = {
-  aiServiceResponse: {
-    summary: 'Assessment received. AI analysis is temporarily unavailable.',
-    severityExplanation: 'The AI service could not process your responses right now.',
-    keyFindings: [],
-    recommendations: [
-      'Try submitting again in a few minutes.',
-      'Your responses have been saved safely.',
-    ],
-    reassurance: 'Your mental health journey matters — we will get this analysed soon.',
-  },
-  breakdown: {},
+    return await response.json();
+  } catch (err) {
+    console.error(`[AI Gateway] startSession fetch error:`, err.message);
+    return null;
+  }
+}
+
+async function sendMessage(correlationId, payload) {
+  try {
+    let requestBody = {
+      sessionId: payload.sessionId,
+      correlationId: correlationId
+    };
+
+    if (payload.answer !== undefined) {
+      requestBody.questionnaireId = payload.questionnaireId;
+      requestBody.questionId = payload.questionId;
+      requestBody.answer = payload.answer;
+    } else {
+      requestBody.message = payload.message;
+    }
+
+    const response = await fetch(AI_URL_ANSWER, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Correlation-ID': correlationId
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[AI Gateway] /answer error: ${response.status} ${text}`);
+      return null;
+    }
+
+    return await response.json();
+  } catch (err) {
+    console.error(`[AI Gateway] sendMessage fetch error:`, err.message);
+    return null;
+  }
+}
+
+// Dummy functions to prevent server crash from other routes
+async function sendAssessment() { return null; }
+async function getDashboardInsights() { return null; }
+async function sendChat() { return null; }
+
+module.exports = { 
+  startSession, 
+  sendMessage,
+  sendAssessment,
+  getDashboardInsights,
+  sendChat
 };
-
-const FALLBACK_DASHBOARD = {
-  aiServiceResponse: {
-    summary: 'AI insights are warming up. Check back shortly.',
-    severityExplanation: '',
-    keyFindings: [],
-    recommendations: [
-      'Practice mindful breathing.',
-      'Stay consistent with your daily check-in.',
-    ],
-    reassurance: 'Small steps every day lead to big change.',
-  },
-  breakdown: {},
-};
-
-// ─── Core request helper ──────────────────────────────────────────────────
-
-async function callAI(payload) {
-  if (!AI_ENDPOINT) {
-    console.warn('[AI Gateway] AI_GATEWAY_URL not set — using fallback.');
-    return null; // caller decides which fallback to use
-  }
-
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(AI_KEY ? { Authorization: `Bearer ${AI_KEY}` } : {}),
-  };
-
-  const response = await fetch(AI_ENDPOINT, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`AI Gateway returned ${response.status}: ${text}`);
-  }
-
-  return response.json();
-}
-
-// ─── Public API ───────────────────────────────────────────────────────────
-
-/**
- * Send a chat message to the AI.
- * @param {{ sessionId, correlationId, message, guideName? }} payload
- */
-async function sendChat(payload) {
-  try {
-    const result = await callAI({
-      sessionId:     payload.sessionId,
-      correlationId: payload.correlationId,
-      message:       payload.message,
-    });
-    return result || FALLBACK_CHAT(payload.guideName);
-  } catch (err) {
-    console.error('[AI Gateway] sendChat error:', err.message);
-    return FALLBACK_CHAT(payload.guideName);
-  }
-}
-
-/**
- * Submit a completed questionnaire.
- * @param {{ sessionId, correlationId, questionnaireId, responses }} payload
- */
-async function sendAssessment(payload) {
-  try {
-    const result = await callAI({
-      sessionId:       payload.sessionId,
-      correlationId:   payload.correlationId,
-      questionnaireId: payload.questionnaireId,
-      responses:       payload.responses,
-    });
-    return result || FALLBACK_ASSESSMENT;
-  } catch (err) {
-    console.error('[AI Gateway] sendAssessment error:', err.message);
-    return FALLBACK_ASSESSMENT;
-  }
-}
-
-/**
- * Fetch dashboard insights (uses last stored insight or re-requests from AI).
- * @param {{ sessionId, correlationId, lastInsight? }} payload
- */
-async function getDashboardInsights(payload) {
-  // If we have a cached insight, return it directly (no extra AI call)
-  if (payload.lastInsight && payload.lastInsight.summary) {
-    return { aiServiceResponse: payload.lastInsight, breakdown: {} };
-  }
-
-  try {
-    const result = await callAI({
-      sessionId:     payload.sessionId,
-      correlationId: payload.correlationId,
-      message:       'Provide a current mental health dashboard summary for this user.',
-    });
-    return result || FALLBACK_DASHBOARD;
-  } catch (err) {
-    console.error('[AI Gateway] getDashboardInsights error:', err.message);
-    return FALLBACK_DASHBOARD;
-  }
-}
-
-module.exports = { sendChat, sendAssessment, getDashboardInsights };

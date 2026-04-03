@@ -1,59 +1,87 @@
 const express = require('express');
 const router  = express.Router();
-const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
-const { sendChat, sendAssessment, getDashboardInsights } = require('../services/aiGateway');
+const User = require('../models/User');
+const { startSession, sendMessage } = require('../services/aiGateway');
 
-// ─── POST /api/ai/chat ────────────────────────────────────────────────────
-router.post('/chat', auth, async (req, res) => {
+// ─── POST /api/ai/start ──────────────────────────────────────────────────
+router.post('/start', auth, async (req, res) => {
   try {
-    const { message } = req.body;
-    if (!message || !message.trim()) {
-      return res.status(400).json({ message: 'Message is required' });
+    const correlationId = req.headers['x-correlation-id'];
+    if (!correlationId) {
+      return res.status(400).json({ error: 'X-Correlation-ID header missing' });
     }
 
-    const user          = req.user;
-    const correlationId = uuidv4();
-
-    // Persist user message to chat history
-    user.chatHistory.push({ role: 'user', content: message.trim() });
-
-    const aiResult = await sendChat({
-      sessionId:     user.sessionId,
-      correlationId,
-      message:       message.trim(),
-      guideName:     user.selectedGuide || 'your guide',
-    });
-
-    const aiMessage = aiResult?.aiServiceResponse?.summary ||
-                      aiResult?.aiServiceResponse?.reassurance ||
-                      "I'm here with you. \uD83C\uDF1F";
-
-    // Persist AI reply to chat history
-    user.chatHistory.push({ role: 'assistant', content: aiMessage });
-
-    // Keep chat history manageable (last 100 messages)
-    if (user.chatHistory.length > 100) {
-      user.chatHistory = user.chatHistory.slice(-100);
+    const aiResult = await startSession(correlationId);
+    if (!aiResult) {
+      // Failsafe format recognized by frontend
+      return res.status(503).json({ error: 'AI unavailable' });
     }
 
-    await user.save();
-
-    res.json({
-      reply:          aiMessage,
-      aiFullResponse: aiResult,
-      correlationId,
-    });
+    res.json(aiResult);
   } catch (err) {
-    console.error('[/api/ai/chat]', err);
-    res.status(500).json({ message: 'AI chat error', reply: 'Something went wrong. Please try again.' });
+    console.error('[/api/ai/start] Base error:', err);
+    res.status(500).json({ error: 'AI start error' });
+  }
+});
+
+// ─── POST /api/ai/answer ─────────────────────────────────────────────────
+router.post('/answer', auth, async (req, res) => {
+  try {
+    const correlationId = req.headers['x-correlation-id'];
+    const { sessionId, message, questionnaireId, questionId, answer } = req.body;
+
+    if (!correlationId || !sessionId) {
+      return res.status(400).json({ error: 'Missing headers or session details' });
+    }
+
+    const payload = { sessionId, message, questionnaireId, questionId, answer };
+    const aiResult = await sendMessage(correlationId, payload);
+
+    if (!aiResult) {
+      return res.status(503).json({ error: 'AI unavailable' });
+    }
+
+    // Handle COMPLETED phase interception
+    if (aiResult.phase === 'COMPLETED') {
+        const user = req.user;
+        // Save full object to MongoDB
+        if (!user.assessments) {
+            user.assessments = [];
+        }
+        user.assessments.push(aiResult);
+
+        // Map latest insights for dashboard
+        if (aiResult.aiServiceResponse) {
+            user.lastAiInsight = aiResult.aiServiceResponse;
+            if (aiResult.aiServiceResponse.recommendations?.length > 0) {
+                user.suggestedActivity = aiResult.aiServiceResponse.recommendations[0];
+            }
+        }
+        await user.save();
+
+        // Strip payload for frontend
+        return res.json({
+            aiServiceResponse: aiResult.aiServiceResponse,
+            result: aiResult.result,
+            phase: aiResult.phase,
+            sessionId: aiResult.sessionId
+        });
+    }
+
+    // Normal progression format
+    res.json(aiResult);
+
+  } catch (err) {
+    console.error('[/api/ai/answer] Base error:', err);
+    res.status(500).json({ error: 'AI answer error' });
   }
 });
 
 // ─── GET /api/ai/history ──────────────────────────────────────────────────
+// Kept just in case the app breaks without it during page transitions
 router.get('/history', auth, async (req, res) => {
   try {
-    // Return last 50 messages for the chat panel
     const history = (req.user.chatHistory || []).slice(-50);
     res.json({ history });
   } catch (err) {

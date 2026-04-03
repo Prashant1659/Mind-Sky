@@ -67,6 +67,7 @@ const UserSchema = new mongoose.Schema({
   // AI Gateway fields
   sessionId: { type: String, default: () => uuidv4() },
   lastAiInsight: { type: mongoose.Schema.Types.Mixed, default: null },
+  assessments: [{ type: mongoose.Schema.Types.Mixed }],
   chatHistory: [{
     role:      { type: String, enum: ['user', 'assistant'], required: true },
     content:   { type: String, required: true },
