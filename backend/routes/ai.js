@@ -4,6 +4,17 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const { startSession, sendMessage } = require('../services/aiGateway');
 
+const analyzeForCrisis = (text = '') => {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  const keywords = [
+    "suicide", "kill myself", "end it all", "want to die",
+    "no reason to live", "better off dead", "goodbye forever",
+    "self harm", "cut myself", "hurt myself", "overdose"
+  ];
+  return keywords.some(k => t.includes(k));
+};
+
 // ─── POST /api/ai/start ──────────────────────────────────────────────────
 router.post('/start', auth, async (req, res) => {
   try {
@@ -33,6 +44,15 @@ router.post('/answer', auth, async (req, res) => {
 
     if (!correlationId || !sessionId) {
       return res.status(400).json({ error: 'Missing headers or session details' });
+    }
+
+    // 🚨 CRISIS CHECK - FIRST PRIORITY
+    if (message && analyzeForCrisis(message)) {
+      return res.json({
+        phase: 'CRISIS',
+        crisisDetected: true,
+        sessionId
+      });
     }
 
     const payload = { sessionId, message, questionnaireId, questionId, answer };

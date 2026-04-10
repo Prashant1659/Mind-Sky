@@ -3,6 +3,8 @@ import Logo from './Logo';
 import ChatBot from './ChatBot';
 import Journal from './Journal';
 import Games from './Games';
+import EmergencyContactModal from './EmergencyContactModal';
+import CrisisButton from './CrisisButton';
 import { guides, sidebarItems } from '../utils/constants';
 import * as FiIcons from 'react-icons/fi';
 
@@ -132,15 +134,19 @@ const Dashboard = ({ onLogout }) => {
   return (
     <div className="flex h-screen bg-[#F0F7FF] font-sans text-[#0D1B2A] overflow-hidden">
 
-      {/* Pinned SOS Button — hidden on chat tab to avoid covering the send button */}
-      {activeTab !== 'chat' && (
-      <div className="fixed bottom-8 right-8 z-50">
-        <button className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center text-white shadow-[0_10px_40px_rgba(239,68,68,0.5)] animate-pulse hover:scale-110 active:scale-95 transition-all cursor-pointer group relative">
-          <FiIcons.FiAlertCircle size={26} />
-          <span className="absolute right-16 bg-[#0D1B2A] text-white text-[9px] px-3 py-1.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all font-black uppercase tracking-widest pointer-events-none shadow-xl">Immediate Support</span>
-        </button>
-      </div>
+      {!user.hasEmergencyContacts && (
+        <EmergencyContactModal 
+          userId={user._id || user.id} 
+          onComplete={() => {
+            const updatedUser = { ...user, hasEmergencyContacts: true };
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+          }} 
+        />
       )}
+
+      {/* Pinned SOS Button — hidden on chat tab to avoid covering the send button */}
+      {activeTab !== 'chat' && <CrisisButton user={user} />}
 
       {/* Sidebar */}
       <aside className="w-64 shrink-0 bg-white/40 backdrop-blur-xl border-r border-white/50 flex flex-col z-30">

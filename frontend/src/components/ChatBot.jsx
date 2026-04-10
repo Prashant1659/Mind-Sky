@@ -184,6 +184,40 @@ export default function ChatBot({ user, onClose }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  // Handle Crisis auto-trigger
+  useEffect(() => {
+    if (phase === 'CRISIS') {
+      const dispatchCrisisAlert = async (lat, lng) => {
+        try {
+          const token = localStorage.getItem('token');
+          await fetch('/api/crisis/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+              userId: user?._id || user?.id,
+              userName: user?.fullName || 'User',
+              crisisType: 'ai_detected',
+              latitude: lat,
+              longitude: lng
+            })
+          });
+        } catch (err) {
+          console.error('Crisis auto-trigger failed:', err);
+        }
+      };
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => dispatchCrisisAlert(pos.coords.latitude, pos.coords.longitude),
+          () => dispatchCrisisAlert(null, null),
+          { timeout: 5000 }
+        );
+      } else {
+        dispatchCrisisAlert(null, null);
+      }
+    }
+  }, [phase, user]);
+
   // ── Send message ────────────────────────────────────────────────────────────
   const handleSend = async (textOverride = null) => {
     const text = textOverride !== null ? textOverride : input.trim();
@@ -260,7 +294,22 @@ export default function ChatBot({ user, onClose }) {
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (phase !== 'QUESTIONNAIRE' && phase !== 'COMPLETED') handleSend();
+      if (phase !== 'QUESTIONNAIRE' && phase !== 'COMPLETED' && phase !== 'CRISIS') handleSend();
+    }
+  };
+
+  const confirmSafe = async () => {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch('/api/crisis/confirm-safe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      });
+      startSession();
+    } catch(err) {
+      console.error(err);
+      setIsLoading(false);
     }
   };
 
@@ -403,7 +452,32 @@ export default function ChatBot({ user, onClose }) {
       {/* ── Input / Action bar ── */}
       <div className="px-6 py-4 bg-white/60 backdrop-blur-xl border-t border-white/50 shrink-0">
 
-        {phase === 'COMPLETED' ? (
+        {phase === 'CRISIS' ? (
+          /* ── CRISIS MODE UI ── */
+          <div className="flex flex-col items-center gap-3 py-2 animate-pulse-slow">
+            <div className="flex items-center gap-2 text-red-500 font-bold">
+              <FiIcons.FiAlertCircle size={20} />
+              <span className="text-sm font-black uppercase tracking-widest">CRISIS PROTOCOL ACTIVE</span>
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-medium text-[#0D1B2A]/70 leading-relaxed mb-1">
+                Your emergency contacts have been notified. Priority help is available.
+              </p>
+              <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-2 mt-2 inline-block">
+                <span className="text-red-600 font-black tracking-widest">DIAL 988 FOR IMMEDIATE HELP</span>
+              </div>
+            </div>
+            <button
+               onClick={confirmSafe}
+               disabled={isLoading}
+               className="mt-2 flex items-center gap-2 px-6 py-3 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-[0_5px_15px_rgba(16,185,129,0.4)] hover:bg-emerald-600 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+             >
+               <FiIcons.FiShield size={16} />
+               {isLoading ? 'Updating...' : "I'M SAFE NOW"}
+             </button>
+          </div>
+
+        ) : phase === 'COMPLETED' ? (
           /* ── SESSION ENDED UI ── */
           <div className="flex flex-col items-center gap-3 py-2">
             <div className="flex items-center gap-2 text-[#0D1B2A]/50">

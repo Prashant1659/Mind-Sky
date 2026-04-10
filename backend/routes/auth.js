@@ -8,7 +8,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_local_dev';
 
 const auth = require('../middleware/auth');
 
-// Helper to return user object with all needed dashboard fields
 const userResponse = (user) => ({
   id: user._id,
   email: user.email,
@@ -19,7 +18,8 @@ const userResponse = (user) => ({
   level: user.level,
   xp: user.xp,
   emotionalScore: user.emotionalScore,
-  journal: user.journal
+  journal: user.journal,
+  hasEmergencyContacts: user.hasEmergencyContacts
 });
 
 // Register

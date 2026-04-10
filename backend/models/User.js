@@ -58,6 +58,7 @@ const UserSchema = new mongoose.Schema({
   level: { type: Number, default: 1 },
   xp: { type: Number, default: 0 },
   emotionalScore: { type: Number, default: 75 },
+  hasEmergencyContacts: { type: Boolean, default: false },
   suggestedActivity: { type: String },
   journal: [{
     title:     { type: String, default: '' },
