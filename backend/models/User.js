@@ -60,6 +60,11 @@ const UserSchema = new mongoose.Schema({
   emotionalScore: { type: Number, default: 75 },
   hasEmergencyContacts: { type: Boolean, default: false },
   suggestedActivity: { type: String },
+  moodLogs: [{
+    mood: { type: String, required: true },
+    date: { type: Date, default: Date.now }
+  }],
+  completedActivities: [{ type: String }],
   journal: [{
     title:     { type: String, default: '' },
     text:      { type: String, required: true },

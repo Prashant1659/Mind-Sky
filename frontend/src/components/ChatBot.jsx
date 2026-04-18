@@ -112,6 +112,7 @@ export default function ChatBot({ user, onClose }) {
   const [isLoading,       setIsLoading]       = useState(true);
   const [error,           setError]           = useState(null);
   const [sessionResult,   setSessionResult]   = useState(null); // { aiResponse, chatSessionId, completedAt }
+  const [currentQuestionText, setCurrentQuestionText] = useState(null);
 
   // Docker Gateway integration states
   const [correlationId,   setCorrelationId]   = useState('');
@@ -132,6 +133,7 @@ export default function ChatBot({ user, onClose }) {
     setSessionId('');
     setQuestionId('');
     setQuestionnaireId('');
+    setCurrentQuestionText(null);
 
     try {
       const newCorrelationId = uuidv4();
@@ -159,7 +161,11 @@ export default function ChatBot({ user, onClose }) {
           setQuestionId(data.question.id);
           setQuestionnaireId(data.question.id.split('_')[0]);
         }
-        setMessages([{ role: 'assistant', content: data.question.text }]);
+        if (data.phase === 'QUESTIONNAIRE') {
+          setCurrentQuestionText(data.question.text);
+        } else {
+          setMessages([{ role: 'assistant', content: data.question.text }]);
+        }
       } else {
         setMessages([{
           role: 'assistant',
@@ -225,7 +231,17 @@ export default function ChatBot({ user, onClose }) {
 
     if (textOverride === null) setInput('');
     setError(null);
-    setMessages((prev) => [...prev, { role: 'user', content: text.toString() }]);
+    
+    if (phase === 'QUESTIONNAIRE' && currentQuestionText) {
+      setMessages((prev) => [
+        ...prev, 
+        { role: 'assistant', content: currentQuestionText },
+        { role: 'user', content: text.toString() }
+      ]);
+    } else {
+      setMessages((prev) => [...prev, { role: 'user', content: text.toString() }]);
+    }
+    
     setIsTyping(true);
 
     try {
@@ -254,7 +270,15 @@ export default function ChatBot({ user, onClose }) {
 
       const data = await res.json();
 
-      if (data.phase) setPhase(data.phase);
+      if (data.phase) {
+        if (data.phase === 'QUESTIONNAIRE' && phase !== 'QUESTIONNAIRE') {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'system', content: 'CLINICAL ASSESSMENT STARTING' }
+          ]);
+        }
+        setPhase(data.phase);
+      }
 
       const questionObj = data.question || data.nextQuestion;
       if (questionObj?.id) {
@@ -263,6 +287,7 @@ export default function ChatBot({ user, onClose }) {
       }
 
       if (data.phase === 'COMPLETED') {
+        setCurrentQuestionText(null);
         // Save result for in-chat card + for assessments tab
         const result = {
           aiResponse:     data.aiServiceResponse,
@@ -278,7 +303,11 @@ export default function ChatBot({ user, onClose }) {
           sessionResult: result
         }]);
       } else if (questionObj?.text) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: questionObj.text }]);
+        if (data.phase === 'QUESTIONNAIRE') {
+          setCurrentQuestionText(questionObj.text);
+        } else {
+          setMessages((prev) => [...prev, { role: 'assistant', content: questionObj.text }]);
+        }
       }
     } catch {
       setError('Connection issue. Please try again.');
@@ -378,7 +407,17 @@ export default function ChatBot({ user, onClose }) {
           </div>
         )}
 
-        {!isLoading && messages.map((msg, i) => (
+        {!isLoading && messages.map((msg, i) => {
+          if (msg.role === 'system') {
+            return (
+              <div key={i} className="flex items-center justify-center w-full py-4 my-2 opacity-80">
+                <div className="h-px bg-blue-200/50 flex-1"></div>
+                <span className="px-4 text-[10px] font-black uppercase tracking-widest text-blue-400">{msg.content}</span>
+                <div className="h-px bg-blue-200/50 flex-1"></div>
+              </div>
+            );
+          }
+          return (
           <div
             key={i}
             className={`flex items-end gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
@@ -421,7 +460,7 @@ export default function ChatBot({ user, onClose }) {
               )}
             </div>
           </div>
-        ))}
+        )})}
 
         {/* Typing indicator */}
         {isTyping && (
@@ -447,6 +486,35 @@ export default function ChatBot({ user, onClose }) {
         )}
 
         <div ref={bottomRef} />
+
+        {/* POP-UP OVERLAY FOR QUESTIONNAIRE */}
+        {phase === 'QUESTIONNAIRE' && currentQuestionText && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 md:p-12 bg-white/40 backdrop-blur-md">
+            <div className="w-full max-w-lg bg-white rounded-[32px] border border-blue-100 shadow-[0_20px_60px_rgba(0,0,0,0.08)] p-8 text-center flex flex-col">
+              <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-500 mx-auto mb-6 shrink-0 shadow-inner">
+                <FiIcons.FiClipboard size={28} />
+              </div>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-3">Assessment Question</h3>
+              <p className="text-xl md:text-2xl font-serif font-black text-[#0D1B2A] leading-relaxed mb-10">{currentQuestionText}</p>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => handleSend(val)}
+                    disabled={isTyping || isLoading}
+                    className="h-16 bg-white hover:bg-blue-50 border-2 border-blue-100 text-blue-600 font-black text-xl rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
+                  >
+                    {val}
+                  </button>
+                ))}
+              </div>
+              <div className="w-full text-center mt-6 text-[10px] uppercase font-black tracking-widest text-[#0D1B2A]/30">
+                0 = Not at all &nbsp;&middot;&nbsp; 3 = Very much
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Input / Action bar ── */}
@@ -495,21 +563,11 @@ export default function ChatBot({ user, onClose }) {
           </div>
 
         ) : phase === 'QUESTIONNAIRE' ? (
-          /* ── QUESTIONNAIRE BUTTONS ── */
-          <div className="flex justify-center flex-wrap gap-2 w-full py-1">
-            {[0, 1, 2, 3].map((val) => (
-              <button
-                key={val}
-                onClick={() => handleSend(val)}
-                disabled={isTyping || isLoading}
-                className="w-12 h-12 bg-white hover:bg-blue-50 border-2 border-blue-100 text-blue-600 font-black text-lg rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
-              >
-                {val}
-              </button>
-            ))}
-            <div className="w-full text-center mt-2 text-[10px] uppercase font-black tracking-widest text-[#0D1B2A]/40">
-              Select an option above (0 = Not at all, 3 = Very much)
-            </div>
+          /* ── QUESTIONNAIRE BUTTONS MOVED TO OVERLAY ── */
+          <div className="flex justify-center w-full h-12 items-center">
+            <span className="text-[10px] font-black uppercase tracking-widest text-[#0D1B2A]/30 flex items-center gap-2">
+              <FiIcons.FiLoader className="animate-spin" /> Assessment in progress...
+            </span>
           </div>
 
         ) : (

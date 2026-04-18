@@ -3,8 +3,13 @@ import Logo from './Logo';
 import ChatBot from './ChatBot';
 import Journal from './Journal';
 import Games from './Games';
+import Activities from './Activities';
 import EmergencyContactModal from './EmergencyContactModal';
 import CrisisButton from './CrisisButton';
+import AmbientPlayer from './AmbientPlayer';
+import LevelUpCelebration from './LevelUpCelebration';
+import Profile from './Profile';
+import Insights from './Insights';
 import { guides, sidebarItems } from '../utils/constants';
 import * as FiIcons from 'react-icons/fi';
 
@@ -15,6 +20,15 @@ const Dashboard = ({ onLogout }) => {
   const [assessments, setAssessments] = useState([]);
   const [assessmentsLoading, setAssessmentsLoading] = useState(false);
   const [expandedAssessment, setExpandedAssessment] = useState(null);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [moodXPPops, setMoodXPPops] = useState([]);
+  const moodXPPopId = React.useRef(0);
+
+  const spawnMoodXP = () => {
+    const id = moodXPPopId.current++;
+    setMoodXPPops(prev => [...prev, { id }]);
+    setTimeout(() => setMoodXPPops(prev => prev.filter(p => p.id !== id)), 2000);
+  };
 
   useEffect(() => {
     const rawUser = localStorage.getItem('user');
@@ -73,9 +87,28 @@ const Dashboard = ({ onLogout }) => {
     }
   };
 
+  const addXP = async (amount, extras = {}) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/auth/add-xp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ amount, ...extras })
+      });
+      if (res.ok) {
+        const updatedUser = await res.json();
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
+    } catch (err) {
+      console.error('Failed to add XP:', err);
+    }
+  };
+
   const handleMoodSelect = (emoji) => {
     setSelectedMood(emoji);
-    updateRemoteProfile({ mood: emoji });
+    addXP(100, { mood: emoji }); // single atomic request: mood + XP together
+    spawnMoodXP();
   };
 
   if (!user) return null;
@@ -131,22 +164,95 @@ const Dashboard = ({ onLogout }) => {
   // SVG dial constants: arc centered at (100, 115), radius 72
   const CX = 100, CY = 115, R = 72, RLABEL = 53;
 
-  return (
-    <div className="flex h-screen bg-[#F0F7FF] font-sans text-[#0D1B2A] overflow-hidden">
+  // ─── Mood-reactive aurora theme ───────────────────────────────
+  const MOOD_THEME = {
+    '😊': {
+      bg:     'linear-gradient(135deg, #FFF9F0 0%, #F0FFF4 40%, #EFF6FF 100%)',
+      orb1:   'rgba(251,191,36,0.18)',
+      orb2:   'rgba(16,185,129,0.12)',
+      orb3:   'rgba(96,165,250,0.10)',
+      sidebar: 'rgba(254,243,199,0.5)',
+    },
+    '😔': {
+      bg:     'linear-gradient(135deg, #EFF6FF 0%, #EEF2FF 50%, #F3F4F6 100%)',
+      orb1:   'rgba(99,102,241,0.15)',
+      orb2:   'rgba(148,163,184,0.12)',
+      orb3:   'rgba(59,130,246,0.10)',
+      sidebar: 'rgba(224,231,255,0.5)',
+    },
+    '😰': {
+      bg:     'linear-gradient(135deg, #FFF5F5 0%, #FFF7ED 50%, #F5F3FF 100%)',
+      orb1:   'rgba(239,68,68,0.13)',
+      orb2:   'rgba(249,115,22,0.10)',
+      orb3:   'rgba(139,92,246,0.08)',
+      sidebar: 'rgba(254,226,226,0.5)',
+    },
+    '😐': {
+      bg:     'linear-gradient(135deg, #F0F7FF 0%, #EFF6FF 50%, #F5F3FF 100%)',
+      orb1:   'rgba(56,189,248,0.13)',
+      orb2:   'rgba(99,102,241,0.10)',
+      orb3:   'rgba(16,185,129,0.07)',
+      sidebar: 'rgba(224,242,254,0.5)',
+    },
+    '😴': {
+      bg:     'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 40%, #EFF6FF 100%)',
+      orb1:   'rgba(139,92,246,0.18)',
+      orb2:   'rgba(99,102,241,0.13)',
+      orb3:   'rgba(167,139,250,0.10)',
+      sidebar: 'rgba(237,233,254,0.5)',
+    },
+  };
+  const theme = MOOD_THEME[selectedMood] || MOOD_THEME['😐'];
 
-      {!user.hasEmergencyContacts && (
+  return (
+    <>
+      {/* Aurora animated background */}
+      <style>{`
+        @keyframes auroraOrb1 {
+          0%,100% { transform: translate(0, 0) scale(1); }
+          33%      { transform: translate(6%, 4%) scale(1.08); }
+          66%      { transform: translate(-4%, 6%) scale(0.95); }
+        }
+        @keyframes auroraOrb2 {
+          0%,100% { transform: translate(0, 0) scale(1); }
+          40%      { transform: translate(-8%, -5%) scale(1.1); }
+          70%      { transform: translate(5%, -3%) scale(0.92); }
+        }
+        @keyframes auroraOrb3 {
+          0%,100% { transform: translate(0, 0) scale(1); }
+          50%      { transform: translate(4%, -6%) scale(1.06); }
+        }
+        .aurora-bg { transition: background 1.2s ease; }
+      `}</style>
+
+    <div className="aurora-bg flex h-screen font-sans text-[#0D1B2A] overflow-hidden relative" style={{ background: theme.bg }}>
+      {/* Animated aurora orbs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        <div style={{ position:'absolute', top:'-10%', left:'-5%', width:'55%', height:'60%', borderRadius:'50%', background: theme.orb1, filter:'blur(80px)', animation:'auroraOrb1 14s ease-in-out infinite', transition:'background 1.2s ease' }} />
+        <div style={{ position:'absolute', bottom:'-15%', right:'-10%', width:'60%', height:'65%', borderRadius:'50%', background: theme.orb2, filter:'blur(90px)', animation:'auroraOrb2 18s ease-in-out infinite', transition:'background 1.2s ease' }} />
+        <div style={{ position:'absolute', top:'35%', left:'40%', width:'40%', height:'40%', borderRadius:'50%', background: theme.orb3, filter:'blur(70px)', animation:'auroraOrb3 22s ease-in-out infinite', transition:'background 1.2s ease' }} />
+      </div>
+
+      {(!user.hasEmergencyContacts || showEmergencyModal) && (
         <EmergencyContactModal 
           userId={user._id || user.id} 
           onComplete={() => {
-            const updatedUser = { ...user, hasEmergencyContacts: true };
-            setUser(updatedUser);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
-          }} 
+            if (!user.hasEmergencyContacts) {
+              const updatedUser = { ...user, hasEmergencyContacts: true };
+              setUser(updatedUser);
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+            }
+            setShowEmergencyModal(false);
+          }}
+          onClose={user.hasEmergencyContacts ? () => setShowEmergencyModal(false) : undefined}
         />
       )}
 
       {/* Pinned SOS Button — hidden on chat tab to avoid covering the send button */}
       {activeTab !== 'chat' && <CrisisButton user={user} />}
+
+      {/* Level-up celebration */}
+      <LevelUpCelebration level={user.level || 1} />
 
       {/* Sidebar */}
       <aside className="w-64 shrink-0 bg-white/40 backdrop-blur-xl border-r border-white/50 flex flex-col z-30">
@@ -169,7 +275,11 @@ const Dashboard = ({ onLogout }) => {
             </button>
           ))}
         </nav>
-        <div className="p-6">
+        {/* Ambient player — sits just above logout, aligned with nav */}
+        <div className="px-4 mb-2">
+          <AmbientPlayer />
+        </div>
+        <div className="p-4 pt-0">
           <button
             onClick={onLogout}
             className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl font-bold text-red-400 hover:bg-red-50 transition-all cursor-pointer"
@@ -191,12 +301,20 @@ const Dashboard = ({ onLogout }) => {
 
         {/* ── Journal Tab ── */}
         {activeTab === 'journal' && (
-          <Journal user={user} />
+          <Journal user={user} onUpdate={setUser} />
         )}
 
         {/* ── Games Tab ── */}
         {activeTab === 'games' && (
-          <Games user={user} />
+          <Games user={user} addXP={addXP} />
+        )}
+
+        {/* ── Activities Tab ── */}
+        {activeTab === 'activities' && (
+          <Activities user={user} onUpdateUser={(updated) => {
+            setUser(updated);
+            localStorage.setItem('user', JSON.stringify(updated));
+          }} />
         )}
 
         {/* ── Assessments Tab ── */}
@@ -221,13 +339,13 @@ const Dashboard = ({ onLogout }) => {
                 </div>
                 <div>
                   <p className="text-lg font-bold text-[#0D1B2A]/70 mb-1">No assessments yet</p>
-                  <p className="text-xs font-medium text-[#0D1B2A]/40">Complete a chat session with your AI guide to see your results here.</p>
+                  <p className="text-xs font-medium text-[#0D1B2A]/40">Complete an assessment session with your AI guide to see your results here.</p>
                 </div>
                 <button
                   onClick={() => setActiveTab('chat')}
                   className="mt-2 px-6 py-3 bg-[#0D1B2A] text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-md cursor-pointer"
                 >
-                  Start AI Chat →
+                  Start AI ASSESSMENT →
                 </button>
               </div>
             )}
@@ -356,7 +474,11 @@ const Dashboard = ({ onLogout }) => {
           </div>
         )}
 
-        {activeTab !== 'chat' && activeTab !== 'assessments' && activeTab !== 'journal' && activeTab !== 'games' && (
+        {activeTab === 'profile' && <Profile user={user} onUpdate={updateRemoteProfile} onOpenEmergencyModal={() => setShowEmergencyModal(true)} />}
+        
+        {activeTab === 'insights' && <Insights user={user} />}
+
+        {activeTab !== 'chat' && activeTab !== 'assessments' && activeTab !== 'journal' && activeTab !== 'games' && activeTab !== 'activities' && activeTab !== 'profile' && activeTab !== 'insights' && (
           <>
         <div className="absolute top-0 right-0 w-[60%] h-[40%] bg-blue-200/20 blur-[120px] rounded-full -z-10 pointer-events-none"></div>
 
@@ -396,7 +518,7 @@ const Dashboard = ({ onLogout }) => {
             <div className="flex flex-wrap justify-center md:justify-start gap-4">
               <button
                 onClick={() => setActiveTab('chat')}
-                className="px-8 py-4 bg-white text-[#0D1B2A] rounded-2xl font-black shadow-lg hover:-translate-y-1 transition-all text-sm active:scale-95 cursor-pointer">Start Chat</button>
+                className="px-8 py-4 bg-white text-[#0D1B2A] rounded-2xl font-black shadow-lg hover:-translate-y-1 transition-all text-sm active:scale-95 cursor-pointer">Take Assessment</button>
 
             </div>
           </div>
@@ -472,7 +594,23 @@ const Dashboard = ({ onLogout }) => {
           </div>
 
           {/* Col 3: Mood Dial */}
-          <div>
+          <div className="relative">
+            <style>{`
+              @keyframes moodXPFloat {
+                0%   { transform: translate(-50%, 0);     opacity: 0; scale: 0.5; }
+                15%  { transform: translate(-50%, -24px);  opacity: 1; scale: 1.3; }
+                75%  { transform: translate(-50%, -80px);  opacity: 1; scale: 1; }
+                100% { transform: translate(-50%, -130px); opacity: 0; scale: 0.85; }
+              }
+              .mood-xp-float { animation: moodXPFloat 2s ease-out forwards; }
+            `}</style>
+            {moodXPPops.map(p => (
+              <div key={p.id} className="mood-xp-float absolute top-1/2 left-1/2 pointer-events-none z-50 whitespace-nowrap">
+                <div className="px-5 py-2.5 bg-gradient-to-r from-emerald-400 to-teal-500 text-white font-black text-xl rounded-full shadow-2xl border-4 border-white/50">
+                  😊 +100 XP
+                </div>
+              </div>
+            ))}
             <div className={`backdrop-blur-xl border border-white rounded-[48px] shadow-sm flex flex-col items-center overflow-hidden transition-all duration-700 ${moodBg}`}>
               <div className="px-8 pt-8 pb-2 w-full flex flex-col items-center">
                 <h4 className="text-xl font-serif font-black text-[#0D1B2A] mb-5 text-center">How's your mood?</h4>
@@ -537,6 +675,7 @@ const Dashboard = ({ onLogout }) => {
         )}
       </main>
     </div>
+    </>
   );
 };
 

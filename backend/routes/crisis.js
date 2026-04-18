@@ -54,10 +54,18 @@ router.post('/emergency-contacts', async (req, res) => {
       return res.status(400).json({ message: 'Invalid data' });
     }
 
+    // Clear existing contacts to allow updates
+    await EmergencyContact.deleteMany({ userId });
+
     // Insert contacts
     const inserted = [];
     for (const c of contacts) {
-      if (!c.fullName || !c.phoneNumber) continue;
+      if (!c.fullName && !c.phoneNumber && !c.relationship) continue;
+      
+      if (!c.fullName || !c.phoneNumber || !c.relationship) {
+        return res.status(400).json({ message: `Please provide Name, Phone, and Relationship for contact.` });
+      }
+
       const newContact = await EmergencyContact.create({
         userId,
         priority: c.priority || 'secondary',

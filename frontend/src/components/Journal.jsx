@@ -336,17 +336,25 @@ function JournalEditor({ entry, onSave, onClose, isSaving }) {
 
 /* ───────────────────────── main component ───────────────────────── */
 
-export default function Journal({ user }) {
+export default function Journal({ user, onUpdate }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null); // null = new, entry = edit
+  const [editingEntry, setEditingEntry] = useState(null);
   const [search, setSearch] = useState('');
   const [filterMood, setFilterMood] = useState('all');
-  const [sortOrder, setSortOrder] = useState('newest'); // 'newest' | 'oldest'
+  const [sortOrder, setSortOrder] = useState('newest');
   const [toast, setToast] = useState(null);
+  const [xpPops, setXpPops] = useState([]);
+  const xpPopId = React.useRef(0);
+
+  const spawnXPPop = (label) => {
+    const id = xpPopId.current++;
+    setXpPops(prev => [...prev, { id, label }]);
+    setTimeout(() => setXpPops(prev => prev.filter(p => p.id !== id)), 2000);
+  };
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -388,12 +396,23 @@ export default function Journal({ user }) {
         setEntries(data.journal || []);
         setEditorOpen(false);
         setEditingEntry(null);
-        showToast(isEdit ? 'Entry updated 📝' : 'Journal saved ✨ +50 XP!');
-        // Update localStorage user xp/level if returned
-        if (data.xp !== undefined) {
+        if (!isEdit) {
+          showToast('Journal saved ✨ +200 XP!');
+          spawnXPPop('+200 XP 📓');
+          // sync user xp/level and journal to localStorage + parent
           const u = JSON.parse(localStorage.getItem('user') || '{}');
-          u.xp = data.xp; u.level = data.level;
+          u.journal = data.journal;
+          if (data.xp !== undefined) {
+            u.xp = data.xp; u.level = data.level;
+          }
           localStorage.setItem('user', JSON.stringify(u));
+          if (onUpdate) onUpdate(u);
+        } else {
+          showToast('Entry updated 📝');
+          const u = JSON.parse(localStorage.getItem('user') || '{}');
+          u.journal = data.journal;
+          localStorage.setItem('user', JSON.stringify(u));
+          if (onUpdate) onUpdate(u);
         }
       } else {
         showToast('Failed to save entry', 'error');
@@ -417,6 +436,12 @@ export default function Journal({ user }) {
         const data = await res.json();
         setEntries(data.journal || []);
         showToast('Entry deleted 🗑️');
+        
+        // sync to parent
+        const u = JSON.parse(localStorage.getItem('user') || '{}');
+        u.journal = data.journal;
+        localStorage.setItem('user', JSON.stringify(u));
+        if (onUpdate) onUpdate(u);
       } else {
         showToast('Failed to delete', 'error');
       }
@@ -449,7 +474,25 @@ export default function Journal({ user }) {
   const firstName = user?.fullName?.split(' ')[0] || 'Friend';
 
   return (
-    <div className="max-w-3xl mx-auto pb-16">
+    <div className="max-w-3xl mx-auto pb-16 relative">
+      {/* XP pop animation */}
+      <style>{`
+        @keyframes journalXPFloat {
+          0%   { transform: translate(-50%, 0);     opacity: 0; scale: 0.5; }
+          15%  { transform: translate(-50%, -30px);  opacity: 1; scale: 1.3; }
+          75%  { transform: translate(-50%, -90px);  opacity: 1; scale: 1; }
+          100% { transform: translate(-50%, -140px); opacity: 0; scale: 0.85; }
+        }
+        .journal-xp-float { animation: journalXPFloat 2s ease-out forwards; }
+      `}</style>
+      {xpPops.map(p => (
+        <div key={p.id} className="journal-xp-float absolute top-16 left-1/2 pointer-events-none z-[400] whitespace-nowrap">
+          <div className="px-6 py-3 bg-gradient-to-r from-amber-400 to-orange-500 text-white font-black text-2xl rounded-full shadow-2xl border-4 border-white/50">
+            {p.label}
+          </div>
+        </div>
+      ))}
+
       {/* Toast */}
       {toast && (
         <div className={`fixed top-6 right-6 z-[300] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-sm font-black transition-all duration-300 ${

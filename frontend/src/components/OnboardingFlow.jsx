@@ -917,14 +917,18 @@ const Step8Consent = ({ formData, updateForm }) => {
         { id: 'consent3', lbl: "I understand Mind Sky is a supportive tool, not a replacement for professional psychological or medical intervention." },
         { id: 'consent4', lbl: "I am aged 16 or above." },
       ].map(c => (
-        <label key={c.id} className="flex items-start gap-4 p-4 border border-gray-100 rounded-[16px] cursor-pointer hover:bg-[#EFF3F8] transition-colors group">
-          <input type="checkbox" checked={formData[c.id] || false} onChange={() => toggleC(c.id)} className="mt-1 w-5 h-5 rounded border-[#0D1B2A] text-[#0D1B2A] focus:ring-[#0D1B2A] accent-[#F5A623] cursor-pointer" />
+        <label key={c.id} className="flex items-center gap-4 p-4 border border-gray-100 rounded-[16px] cursor-pointer hover:bg-[#EFF3F8] transition-colors group">
+          <div className="flex-shrink-0">
+            <input type="checkbox" checked={formData[c.id] || false} onChange={() => toggleC(c.id)} className="rounded border-[#0D1B2A] text-[#0D1B2A] focus:ring-[#0D1B2A] accent-[#F5A623] cursor-pointer" style={{ width: '20px', height: '20px', minWidth: '20px', minHeight: '20px' }} />
+          </div>
           <span className="text-sm font-semibold opacity-80 group-hover:opacity-100 leading-snug">{c.lbl} <span className="text-red-500">*</span></span>
         </label>
       ))}
 
-      <label className="flex items-start gap-4 p-4 border border-gray-100 rounded-[16px] cursor-pointer hover:bg-[#EFF3F8] transition-colors group">
-        <input type="checkbox" checked={formData.consent5 || false} onChange={() => toggleC('consent5')} className="mt-1 w-5 h-5 rounded border-[#0D1B2A] text-[#0D1B2A] focus:ring-[#0D1B2A] accent-[#F5A623] cursor-pointer" />
+      <label className="flex items-center gap-4 p-4 border border-gray-100 rounded-[16px] cursor-pointer hover:bg-[#EFF3F8] transition-colors group">
+        <div className="flex-shrink-0">
+          <input type="checkbox" checked={formData.consent5 || false} onChange={() => toggleC('consent5')} className="rounded border-[#0D1B2A] text-[#0D1B2A] focus:ring-[#0D1B2A] accent-[#F5A623] cursor-pointer" style={{ width: '20px', height: '20px', minWidth: '20px', minHeight: '20px' }} />
+        </div>
         <span className="text-sm font-semibold opacity-80 group-hover:opacity-100 leading-snug">Optional: Send me rare, positive affirmations to my email inbox once a week.</span>
       </label>
     </div>

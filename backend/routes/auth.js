@@ -18,8 +18,11 @@ const userResponse = (user) => ({
   level: user.level,
   xp: user.xp,
   emotionalScore: user.emotionalScore,
-  journal: user.journal,
-  hasEmergencyContacts: user.hasEmergencyContacts
+  journal: user.journal || [],
+  moodLogs: user.moodLogs || [],
+  assessments: user.assessments || [],
+  hasEmergencyContacts: user.hasEmergencyContacts,
+  completedActivities: user.completedActivities || []
 });
 
 // Register
@@ -77,7 +80,10 @@ router.post('/login', async (req, res) => {
 router.put('/update-profile', auth, async (req, res) => {
   try {
     const updates = req.body;
-    const allowedUpdates = ['mood', 'streak', 'level', 'xp', 'emotionalScore'];
+    const allowedUpdates = [
+      'mood', 'streak', 'level', 'xp', 'emotionalScore', 
+      'selectedGuide', 'fullName', 'phone', 'location', 'goals'
+    ];
     
     allowedUpdates.forEach(update => {
       if (updates[update] !== undefined) {
@@ -101,10 +107,10 @@ router.post('/add-journal', auth, async (req, res) => {
 
     req.user.journal.unshift({ text, date: new Date() });
     
-    // Simple XP boost for journaling
-    req.user.xp += 50;
+    // XP for journaling: 200 XP
+    req.user.xp += 200;
     if (req.user.xp >= 1000) {
-      req.user.xp = 0;
+      req.user.xp -= 1000;
       req.user.level += 1;
     }
 
@@ -116,5 +122,84 @@ router.post('/add-journal', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+// Complete Activity (Gamification)
+router.post('/complete-activity', auth, async (req, res) => {
+  try {
+    const { activityText } = req.body;
+    if (!activityText) return res.status(400).json({ message: 'Activity text is required' });
 
+    const user = req.user;
+    
+    // Initialize if not present
+    if (!user.completedActivities) {
+      user.completedActivities = [];
+    }
+
+    // Check if already completed to prevent spam
+    if (user.completedActivities.includes(activityText)) {
+      return res.status(400).json({ message: 'Activity already completed' });
+    }
+
+    // Add to completed list
+    user.completedActivities.push(activityText);
+
+    // Grant XP
+    user.xp += 150;
+    
+    // Handle Level Up
+    if (user.xp >= 1000) {
+      const remainder = user.xp - 1000;
+      user.level += 1;
+      user.xp = remainder;
+    }
+
+    // Optional: Boost emotional score slightly on activity completion
+    if (user.emotionalScore < 100) {
+      user.emotionalScore = Math.min(100, user.emotionalScore + 2);
+    }
+
+    await user.save();
+    res.json(userResponse(user));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error completing activity' });
+  }
+});
+
+// Add XP atomically (avoids frontend race conditions)
+router.post('/add-xp', auth, async (req, res) => {
+  try {
+    const { amount, mood } = req.body;
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return res.status(400).json({ message: 'Invalid XP amount' });
+    }
+
+    // Re-fetch fresh user from DB to avoid stale reads
+    const User = require('../models/User');
+    const freshUser = await User.findById(req.user._id);
+
+    freshUser.xp = (freshUser.xp || 0) + amount;
+
+    // Handle potentially multiple level-ups
+    while (freshUser.xp >= 1000) {
+      freshUser.xp -= 1000;
+      freshUser.level = (freshUser.level || 1) + 1;
+    }
+
+    // Optionally update mood and record log in the same save
+    if (mood) {
+      freshUser.mood = mood;
+      // Initialize if not present (legacy migration safety)
+      if (!freshUser.moodLogs) freshUser.moodLogs = [];
+      freshUser.moodLogs.push({ mood, date: new Date() });
+    }
+
+    await freshUser.save();
+    res.json(userResponse(freshUser));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error adding XP' });
+  }
+});
+
+module.exports = router;

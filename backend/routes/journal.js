@@ -5,7 +5,9 @@ const User = require('../models/User');
 
 // Helper: strip user doc down to journal response shape
 const journalResponse = (user) => ({
-  journal: user.journal,
+  journal: user.journal || [],
+  moodLogs: user.moodLogs || [],
+  assessments: user.assessments || [],
   xp: user.xp,
   level: user.level,
 });
