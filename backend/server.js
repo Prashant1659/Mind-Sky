@@ -36,7 +36,7 @@ const PORT = process.env.PORT || 5001;
 async function startServer() {
   try {
     let mongoUri = process.env.MONGO_URI;
-    
+
     if (!mongoUri) {
       console.log('No MONGO_URI provided. Starting in-memory MongoDB for seamless local development...');
       const mongoServer = await MongoMemoryServer.create();

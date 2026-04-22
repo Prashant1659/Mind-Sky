@@ -187,7 +187,7 @@ const Profile = ({ user, onUpdate, onOpenEmergencyModal }) => {
       <section className="bg-white/40 backdrop-blur-2xl rounded-[40px] border border-white p-8 shadow-sm">
         <div className="text-[10px] font-black uppercase tracking-widest text-[#0D1B2A]/40 mb-6 px-2">Choose Your Companion</div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {guides.map((guide) => (
+          {guides.filter(g => user.isGuest || g.id !== 'ai_guide').map((guide) => (
             <button
               key={guide.id}
               onClick={() => onUpdate({ selectedGuide: guide.id })}

@@ -40,7 +40,8 @@ router.post('/start', auth, async (req, res) => {
 router.post('/answer', auth, async (req, res) => {
   try {
     const correlationId = req.headers['x-correlation-id'];
-    const { sessionId, message, questionnaireId, questionId, answer } = req.body;
+    const { sessionId, message, questionnaireId, questionId, answer, responses } = req.body;
+    // console.log('req.body : ',req.body);
 
     if (!correlationId || !sessionId) {
       return res.status(400).json({ error: 'Missing headers or session details' });
@@ -55,7 +56,7 @@ router.post('/answer', auth, async (req, res) => {
       });
     }
 
-    const payload = { sessionId, message, questionnaireId, questionId, answer };
+    const payload = { sessionId, message, questionnaireId, questionId, answer, responses };
     const aiResult = await sendMessage(correlationId, payload);
 
     if (!aiResult) {
@@ -81,7 +82,7 @@ router.post('/answer', auth, async (req, res) => {
                 },
                 chatHistory: {
                     $each: [
-                        { role: 'user', content: answer !== undefined ? String(answer) : message },
+                        { role: 'user', content: responses !== undefined ? (typeof responses === 'object' ? Object.values(responses).join(' | ') : String(responses)) : (answer !== undefined ? String(answer) : message) },
                         { role: 'assistant', content: aiResult.aiServiceResponse?.summary || 'Assessment Complete' }
                     ],
                     $slice: -50
@@ -117,10 +118,10 @@ router.post('/answer', auth, async (req, res) => {
     else if (aiResult.nextQuestion?.text) aiText = aiResult.nextQuestion.text;
     else if (aiResult.message) aiText = aiResult.message;
 
-    if (aiText || answer !== undefined || message) {
+    if (aiText || answer !== undefined || responses !== undefined || message) {
         const historyPush = [];
-        if (answer !== undefined || message) {
-            historyPush.push({ role: 'user', content: answer !== undefined ? String(answer) : message });
+        if (answer !== undefined || responses !== undefined || message) {
+            historyPush.push({ role: 'user', content: responses !== undefined ? (typeof responses === 'object' ? Object.values(responses).join(' | ') : String(responses)) : (answer !== undefined ? String(answer) : message) });
         }
         if (aiText) {
             historyPush.push({ role: 'assistant', content: aiText });

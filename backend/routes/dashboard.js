@@ -43,4 +43,17 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+router.get('/fetch', auth, async (req, res) => {
+  try {
+    const user = req.user;
+    res.json({
+      assessments: user.assessments
+    });
+  } catch (err) {
+    console.error('[/api/dashboard/fetch]', err);
+    res.status(500).json({ message: 'Dashboard fetch error' });
+  }
+});
+
+
 module.exports = router;

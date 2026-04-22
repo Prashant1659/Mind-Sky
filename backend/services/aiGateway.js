@@ -3,8 +3,8 @@
  * Replaces old placeholder logic. Hits local Docker container (localhost:8080).
  */
 
-const AI_URL_START = 'http://localhost:8080/api/gateway/start';
-const AI_URL_ANSWER = 'http://localhost:8080/api/gateway/answer';
+const AI_URL_START = process.env.AI_URL_START;
+const AI_URL_ANSWER = process.env.AI_URL_ANSWER;
 
 async function startSession(correlationId) {
   try {
@@ -37,14 +37,18 @@ async function sendMessage(correlationId, payload) {
       correlationId: correlationId
     };
 
-    if (payload.answer !== undefined) {
+    if (payload.responses !== undefined) {
+      requestBody.questionnaireId = payload.questionnaireId;
+      requestBody.questionId = payload.questionId;
+      requestBody.responses = payload.responses;
+    } else if (payload.answer !== undefined) {
       requestBody.questionnaireId = payload.questionnaireId;
       requestBody.questionId = payload.questionId;
       requestBody.answer = payload.answer;
     } else {
       requestBody.message = payload.message;
     }
-
+    // console.log('payload : ',payload);
     const response = await fetch(AI_URL_ANSWER, {
       method: 'POST',
       headers: {
@@ -53,6 +57,8 @@ async function sendMessage(correlationId, payload) {
       },
       body: JSON.stringify(requestBody)
     });
+
+    // console.log('response : ' ,response)
 
     if (!response.ok) {
       const text = await response.text();

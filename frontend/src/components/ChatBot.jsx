@@ -113,7 +113,7 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
   const [isLoading,       setIsLoading]       = useState(true);
   const [error,           setError]           = useState(null);
   const [sessionResult,   setSessionResult]   = useState(null); // { aiResponse, chatSessionId, completedAt }
-  const [currentQuestionText, setCurrentQuestionText] = useState(null);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
 
   // Docker Gateway integration states
   const [correlationId,   setCorrelationId]   = useState('');
@@ -121,6 +121,7 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
   const [phase,           setPhase]           = useState('');
   const [questionId,      setQuestionId]      = useState('');
   const [questionnaireId, setQuestionnaireId] = useState('');
+  const [dualSelections,  setDualSelections]  = useState({});
 
   const bottomRef = useRef(null);
 
@@ -134,7 +135,8 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
     setSessionId('');
     setQuestionId('');
     setQuestionnaireId('');
-    setCurrentQuestionText(null);
+    setCurrentQuestion(null);
+    setDualSelections({});
 
     try {
       const newCorrelationId = uuidv4();
@@ -163,7 +165,7 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
           setQuestionnaireId(data.question.id.split('_')[0]);
         }
         if (data.phase === 'QUESTIONNAIRE') {
-          setCurrentQuestionText(data.question.text);
+          setCurrentQuestion(data.question);
         } else {
           setMessages([{ role: 'assistant', content: data.question.text }]);
         }
@@ -234,14 +236,19 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
     if (textOverride === null) setInput('');
     setError(null);
     
-    if (phase === 'QUESTIONNAIRE' && currentQuestionText) {
+    let displayAnswer = text;
+    if (typeof text === 'object' && text !== null) {
+      displayAnswer = Object.entries(text).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)}: ${v}`).join(' | ');
+    }
+    
+    if (phase === 'QUESTIONNAIRE' && currentQuestion) {
       setMessages((prev) => [
         ...prev, 
-        { role: 'assistant', content: currentQuestionText },
-        { role: 'user', content: text.toString() }
+        { role: 'assistant', content: currentQuestion.text },
+        { role: 'user', content: displayAnswer.toString() }
       ]);
     } else {
-      setMessages((prev) => [...prev, { role: 'user', content: text.toString() }]);
+      setMessages((prev) => [...prev, { role: 'user', content: displayAnswer.toString() }]);
     }
     
     isTypingRef.current = true;
@@ -254,7 +261,18 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
       if (phase === 'QUESTIONNAIRE') {
         reqBody.questionnaireId = questionnaireId;
         reqBody.questionId      = questionId;
-        reqBody.answer          = text;
+        
+        const answerTests = ['asrs', 'gad7', 'pcl5', 'phq9', 'pss10'];
+        if (answerTests.includes(questionnaireId)) {
+          reqBody.answer = text;
+        } else {
+          if (typeof text === 'object') {
+            reqBody.responses = text;
+          } else {
+            const rKey = currentQuestion?.response_format?.response_key || 'value';
+            reqBody.responses = { [rKey]: text };
+          }
+        }
       } else {
         reqBody.message = text;
       }
@@ -287,10 +305,11 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
       if (questionObj?.id) {
         setQuestionId(questionObj.id);
         setQuestionnaireId(questionObj.id.split('_')[0]);
+        setDualSelections({});
       }
 
       if (data.phase === 'COMPLETED') {
-        setCurrentQuestionText(null);
+        setCurrentQuestion(null);
         // Save result for in-chat card + for assessments tab
         const result = {
           aiResponse:     data.aiServiceResponse,
@@ -318,7 +337,7 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
         }]);
       } else if (questionObj?.text) {
         if (data.phase === 'QUESTIONNAIRE') {
-          setCurrentQuestionText(questionObj.text);
+          setCurrentQuestion(questionObj);
         } else {
           setMessages((prev) => [...prev, { role: 'assistant', content: questionObj.text }]);
         }
@@ -503,30 +522,153 @@ export default function ChatBot({ user, onClose, onUpdateUser }) {
         <div ref={bottomRef} />
 
         {/* POP-UP OVERLAY FOR QUESTIONNAIRE */}
-        {phase === 'QUESTIONNAIRE' && currentQuestionText && (
+        {phase === 'QUESTIONNAIRE' && currentQuestion && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 md:p-12 bg-white/40 backdrop-blur-md">
             <div className="w-full max-w-lg bg-white rounded-[32px] border border-blue-100 shadow-[0_20px_60px_rgba(0,0,0,0.08)] p-8 text-center flex flex-col">
               <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-500 mx-auto mb-6 shrink-0 shadow-inner">
                 <FiIcons.FiClipboard size={28} />
               </div>
               <h3 className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-3">Assessment Question</h3>
-              <p className="text-xl md:text-2xl font-serif font-black text-[#0D1B2A] leading-relaxed mb-10">{currentQuestionText}</p>
+              <p className="text-xl md:text-2xl font-serif font-black text-[#0D1B2A] leading-relaxed mb-10">{currentQuestion.text}</p>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[0, 1, 2, 3].map((val) => (
-                  <button
-                    key={val}
-                    onClick={() => handleSend(val)}
-                    disabled={isTyping || isLoading}
-                    className="h-16 bg-white hover:bg-blue-50 border-2 border-blue-100 text-blue-600 font-black text-xl rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
-                  >
-                    {val}
-                  </button>
-                ))}
-              </div>
-              <div className="w-full text-center mt-6 text-[10px] uppercase font-black tracking-widest text-[#0D1B2A]/30">
-                0 = Not at all &nbsp;&middot;&nbsp; 3 = Very much
-              </div>
+              {(() => {
+                const format = currentQuestion.response_format || { type: 'scale', scale: 'likert_0_3' };
+                
+                if (format.type === 'scale') {
+                  const parts = format.scale ? format.scale.split('_') : [];
+                  let max = parseInt(parts[parts.length - 1]);
+                  let min = parseInt(parts[parts.length - 2]);
+                  
+                  if (isNaN(max)) max = 3;
+                  if (isNaN(min)) min = 0;
+                  
+                  const options = Array.from({length: (max - min) + 1}, (_, i) => i + min);
+                  
+                  return (
+                    <>
+                      <div className="flex flex-wrap justify-center gap-2">
+                        {options.map((val) => (
+                          <button
+                            key={val}
+                            onClick={() => handleSend(val)}
+                            disabled={isTyping || isLoading}
+                            className="w-11 h-11 md:w-12 md:h-12 bg-white hover:bg-blue-50 border-2 border-blue-100 text-blue-600 font-black text-lg md:text-xl rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer shrink-0"
+                          >
+                            {val}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="w-full text-center mt-6 text-[10px] uppercase font-black tracking-widest text-[#0D1B2A]/30">
+                        {min} = Not at all &nbsp;&middot;&nbsp; {max} = Very much Likely
+                      </div>
+                    </>
+                  );
+                }
+
+                if (format.type === 'number') {
+                    return (
+                        <div className="w-full flex flex-col items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="number" 
+                              id="number-input"
+                              min={format.min ?? 0}
+                              max={format.max ?? 100}
+                              step={format.step ?? 1}
+                              className="w-32 h-16 text-center text-2xl font-black text-[#0D1B2A] bg-white border-2 border-blue-100 rounded-2xl focus:border-blue-400 focus:outline-none"
+                            />
+                            {format.unit && <span className="text-sm font-bold text-[#0D1B2A]/50 uppercase">{format.unit}</span>}
+                          </div>
+                          <button
+                            onClick={() => {
+                                const val = document.getElementById('number-input').value;
+                                if(val !== '') handleSend(format.allow_decimal ? parseFloat(val) : parseInt(val));
+                            }}
+                            disabled={isTyping || isLoading}
+                            className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm uppercase tracking-widest rounded-2xl transition-all cursor-pointer"
+                          >
+                            Submit
+                          </button>
+                        </div>
+                    );
+                }
+
+                if (format.type === 'time') {
+                    return (
+                        <div className="w-full flex flex-col items-center gap-4">
+                          <input 
+                            type="time" 
+                            id="time-input"
+                            className="w-48 h-16 text-center text-xl font-black text-[#0D1B2A] bg-white border-2 border-blue-100 rounded-2xl focus:border-blue-400 focus:outline-none"
+                          />
+                          <button
+                            onClick={() => {
+                                const val = document.getElementById('time-input').value;
+                                if(val) handleSend(val);
+                            }}
+                            disabled={isTyping || isLoading}
+                            className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm uppercase tracking-widest rounded-2xl transition-all cursor-pointer"
+                          >
+                            Submit
+                          </button>
+                        </div>
+                    );
+                }
+
+                if (format.type === 'dual_scale') {
+                     const scale1 = Object.keys(format.response_keys)[0];
+                     const scale2 = Object.keys(format.response_keys)[1];
+                     
+                     const max1 = parseInt(format.response_keys[scale1].split('_').pop()) || 3;
+                     const max2 = parseInt(format.response_keys[scale2].split('_').pop()) || 3;
+
+                     return (
+                        <div className="w-full flex flex-col gap-6">
+                           <div>
+                               <div className="text-[10px] font-black uppercase tracking-widest text-[#0D1B2A]/50 mb-2">{scale1}</div>
+                               <div className="flex justify-center gap-2">
+                                   {Array.from({length: max1 + 1}, (_, i) => i).map((val) => (
+                                       <button
+                                           key={`s1-${val}`}
+                                           onClick={() => setDualSelections(prev => ({ ...prev, [scale1]: val }))}
+                                           className={`w-12 h-12 bg-white border-2 text-blue-600 font-black text-lg rounded-xl transition-all cursor-pointer ${dualSelections[scale1] === val ? 'ring-4 ring-blue-400 bg-blue-50 border-blue-100' : 'border-blue-100 hover:bg-blue-50'}`}
+                                       >
+                                           {val}
+                                       </button>
+                                   ))}
+                               </div>
+                           </div>
+                           <div>
+                               <div className="text-[10px] font-black uppercase tracking-widest text-[#0D1B2A]/50 mb-2">{scale2}</div>
+                               <div className="flex justify-center gap-2">
+                                   {Array.from({length: max2 + 1}, (_, i) => i).map((val) => (
+                                       <button
+                                           key={`s2-${val}`}
+                                           onClick={() => setDualSelections(prev => ({ ...prev, [scale2]: val }))}
+                                           className={`w-12 h-12 bg-white border-2 text-blue-600 font-black text-lg rounded-xl transition-all cursor-pointer ${dualSelections[scale2] === val ? 'ring-4 ring-blue-400 bg-blue-50 border-blue-100' : 'border-blue-100 hover:bg-blue-50'}`}
+                                       >
+                                           {val}
+                                       </button>
+                                   ))}
+                               </div>
+                           </div>
+                           
+                           <button
+                            disabled={dualSelections[scale1] === undefined || dualSelections[scale2] === undefined || isTyping || isLoading}
+                            onClick={() => {
+                                handleSend({ [scale1]: dualSelections[scale1], [scale2]: dualSelections[scale2] });
+                            }}
+                            className="mt-2 text-center py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm uppercase tracking-widest rounded-2xl transition-all w-full max-w-[200px] mx-auto disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            Submit
+                          </button>
+                        </div>
+                     );
+                }
+                
+                return null;
+              })()}
+
             </div>
           </div>
         )}

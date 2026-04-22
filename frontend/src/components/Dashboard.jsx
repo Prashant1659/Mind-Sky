@@ -399,7 +399,7 @@ const Dashboard = ({ onLogout }) => {
                     const isCrit = ai.severityExplanation?.toLowerCase().includes('severe') ||
                       ai.severityExplanation?.toLowerCase().includes('critical');
                     const isExpanded = expandedAssessment === idx;
-
+                    const assessmentHeading = a.data.result.severityLabel;
                     return (
                       <div
                         key={a.chatSessionId || `session-${idx + 1}`}
@@ -421,7 +421,8 @@ const Dashboard = ({ onLogout }) => {
                               </div>
                               {/* Severity Label */}
                               <h4 className={`text-xs font-black uppercase tracking-[0.1em] ${isCrit ? 'text-red-500' : 'text-indigo-500'}`}>
-                                {ai.severityLabel || getPreciseSeverity(ai.severityExplanation)}
+                                {/* {ai.severityLabel || getPreciseSeverity(ai.severityExplanation)} */}
+                                {assessmentHeading}
                               </h4>
                             </div>
                             <div className="w-8 h-8 rounded-full bg-white/50 border border-white flex items-center justify-center text-[#0D1B2A]/20 group-hover:bg-white group-hover:shadow-md group-hover:text-indigo-500 group-hover:-translate-x-1 transition-all duration-300">

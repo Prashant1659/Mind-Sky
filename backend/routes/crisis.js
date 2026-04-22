@@ -7,6 +7,9 @@ const User = require('../models/User');
 const authMiddleware = require('../middleware/auth'); // assuming standard layout if exists
 const twilio = require('twilio');
 
+const CALL_API_URL = process.env.CALL_API_URL;
+const SMS_API_URL = process.env.SMS_API_URL
+
 // Initialize Twilio client if configured
 let twilioClient = null;
 if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
@@ -111,15 +114,35 @@ router.post('/trigger', async (req, res) => {
     if (!userId) {
       return res.status(400).json({ message: 'userId required' });
     }
-
+    // console.log('longitude : ',longitude, 'latitude : ',latitude)
     const contacts = await EmergencyContact.find({ userId });
     const uName = userName || 'A user';
-
+    // console.log(contacts)
     let smsSentCount = 0;
     for (const contact of contacts) {
       if (contact.phoneNumber) {
-        const success = await sendEmergencySMS(contact.phoneNumber, uName, latitude, longitude, crisisType);
-        if (success) smsSentCount++;
+        try {
+          // Remove any leading '+' so we can explicitly prepend '%2B' in the URL safely
+          // const rawPhone = contact.phoneNumber.replace(/^\+/, '');
+          // const encodedPhone = encodeURIComponent(rawPhone);
+          // const encodedUserName = encodeURIComponent(uName);
+          
+          const callReq = await fetch(`${CALL_API_URL}${contact.phoneNumber}&username=${uName}`,{method:'POST'});
+          // console.log('callreq : ',callReq)
+          const smsReq = await fetch(`${SMS_API_URL}${contact.phoneNumber}&username=${uName}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              latitude: latitude || 28.6193,
+              longitude: longitude || 77.2090
+            })
+          });
+          // console.log('smsreq : ',smsReq)
+          
+          smsSentCount++;
+        } catch (err) {
+          console.error('External crisis API call failed:', err);
+        }
       }
     }
 
